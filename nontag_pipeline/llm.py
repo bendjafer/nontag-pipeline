@@ -42,9 +42,9 @@ def _cache_path(key: str) -> Path:
 
 
 def _call_openai(system: str, prompt: str) -> str:
-    api_key = os.environ.get("OPENAI_API_KEY")
+    api_key = os.environ.get("LLM_API_KEY")
     if not api_key:
-        raise EnvironmentError("OPENAI_API_KEY is not set")
+        raise EnvironmentError("LLM_API_KEY is not set")
     resp = requests.post(
         f"{config.LLM_BASE_URL}/chat/completions",
         headers={"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"},

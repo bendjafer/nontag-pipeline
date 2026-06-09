@@ -82,7 +82,7 @@ docs/superpowers/      implementation plan + design spec
 .venv/bin/python -m pytest tests/ -v
 
 # Run smoke test (requires OpenAI API key)
-export OPENAI_API_KEY="sk-..."
+export LLM_API_KEY="sk-..."        # OpenAI key, university key, or whatever your server uses
 .venv/bin/python run_textualize_demo.py
 
 # To switch to Cora: edit nontag_pipeline/config.py → DATASET = "cora"
@@ -91,7 +91,7 @@ export OPENAI_API_KEY="sk-..."
 ```
 
 ### LLM Backend
-- Default: OpenAI (`gpt-4o-mini`), reads `OPENAI_API_KEY` from environment — never hardcoded.
+- Default: OpenAI (`gpt-4o-mini`), reads `LLM_API_KEY` from environment — never hardcoded.
 - Ollama supported: change `LLM_BACKEND = "ollama"` and `LLM_BASE_URL = "http://localhost:11434"`.
 - University server: change `LLM_BASE_URL` to the server endpoint — zero code changes.
 - All responses cached on disk at `.cache/llm/<sha256>.json` — re-running never re-calls the API.
