@@ -1,10 +1,12 @@
 # run_textualize_demo.py
-"""Smoke test: textualize 5 test-mask nodes, assert no leakage, save pseudo-TAG."""
+"""Smoke test: textualize 5 test-mask nodes and print prompts/outputs.
+
+Does NOT save anything — run_textualize_full.py is the full run that saves the pseudo-TAG.
+"""
 import random
 from nontag_pipeline import config
 from nontag_pipeline.data import load_dataset
 from nontag_pipeline.textualize import generate_node_text
-from nontag_pipeline.io import save_pseudo_tag
 
 
 def main() -> None:
@@ -12,17 +14,15 @@ def main() -> None:
         config.DATASET, seed=config.SEED, root=config.DATA_ROOT
     )
 
-    # Build visible_labels ONCE from train + val only
+    # Build visible_labels ONCE from train + val only. Test labels are excluded
+    # by construction; own-label exclusion is asserted inside generate_node_text.
     visible_labels = {
         int(n): int(y[n])
         for n in G.nodes()
         if train_mask[n].item() or val_mask[n].item()
     }
 
-    # Assert: no test node label is present in visible_labels (leakage check)
     test_nodes = [int(n) for n in G.nodes() if test_mask[n].item()]
-    for n in test_nodes:
-        assert n not in visible_labels, f"Leakage: test node {n} found in visible_labels"
 
     # Pick 5 test nodes deterministically
     rng = random.Random(config.SEED)
@@ -47,8 +47,7 @@ def main() -> None:
             print("No visible-labeled neighbors — skipped LLM call.")
 
     print(f"\n{'=' * 60}")
-    print(f"Leakage assertion passed for all {len(test_nodes)} test nodes.")
-    print("Demo complete. Full pipeline run and save are separate steps.")
+    print("Demo complete. Run run_textualize_full.py to textualize all nodes and save.")
 
 
 if __name__ == "__main__":

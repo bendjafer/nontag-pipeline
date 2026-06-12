@@ -25,9 +25,16 @@ def test_prompt_user_contains_target_len():
     assert "120" in user
 
 
-def test_prompt_user_contains_style():
+def test_prompt_user_contains_style_template():
+    from nontag_pipeline.narratives import STYLE_TEMPLATES
     _, user = build_generation_prompt([("fog and chance", 1.0)], "poetry", 80)
-    assert "poetry" in user
+    assert STYLE_TEMPLATES["poetry"] in user
+
+
+def test_prompt_unknown_style_raises():
+    import pytest
+    with pytest.raises(ValueError, match="STYLE_TEMPLATES"):
+        build_generation_prompt([("fog and chance", 1.0)], "haiku", 80)
 
 
 def test_prompt_percentages_shown_as_integers():
@@ -58,6 +65,18 @@ def test_generate_returns_ok_when_neighbors_visible():
     assert result["status"] == "ok"
     assert result["text"] == "a poem"
     assert result["node"] == 0
+    assert result["n_selected"] == 2
+    assert result["n_visible"] == 2
+
+
+def test_generate_asserts_if_node_selects_itself():
+    G, y, tr, va, te, cls = _make_small_graph()
+    visible = {n: int(y[n]) for n in range(len(y)) if tr[n] or va[n]}
+
+    import pytest
+    with patch("nontag_pipeline.textualize.ppr_selection", return_value=[0, 1]):
+        with pytest.raises(AssertionError, match="Leakage"):
+            generate_node_text(G, 0, visible, cls, "pubmed", "poetry", 80)
 
 
 def test_generate_returns_no_signal_when_no_visible_neighbors():
@@ -70,3 +89,5 @@ def test_generate_returns_no_signal_when_no_visible_neighbors():
     result = generate_node_text(G, 0, visible, class_names, "pubmed", "poetry", 80)
     assert result["status"] == "no_signal"
     assert result["text"] is None
+    assert result["n_selected"] == 2
+    assert result["n_visible"] == 0

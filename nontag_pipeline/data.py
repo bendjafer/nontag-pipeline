@@ -27,16 +27,13 @@ _CLASS_NAMES: dict[str, list[str]] = {
 }
 
 
-def load_dataset(
-    name: str, seed: int = 42, root: str = "/tmp/planetoid"
-) -> tuple[nx.Graph, np.ndarray, torch.Tensor, torch.Tensor, torch.Tensor, list[str]]:
-    """Load Planetoid dataset, apply 60/20/20 seeded split, return undirected graph."""
-    dataset = Planetoid(root=root, name=name.capitalize())
-    data = dataset[0]
-    n: int = data.num_nodes
-
-    torch.manual_seed(seed)
-    perm = torch.randperm(n)
+def make_split_masks(
+    n: int, seed: int
+) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+    """Seeded 60/20/20 train/val/test boolean masks over n nodes."""
+    gen = torch.Generator()
+    gen.manual_seed(seed)
+    perm = torch.randperm(n, generator=gen)
     train_end = int(0.6 * n)
     val_end = int(0.8 * n)
 
@@ -46,6 +43,18 @@ def load_dataset(
     train_mask[perm[:train_end]] = True
     val_mask[perm[train_end:val_end]] = True
     test_mask[perm[val_end:]] = True
+    return train_mask, val_mask, test_mask
+
+
+def load_dataset(
+    name: str, seed: int = 42, root: str = "data/planetoid"
+) -> tuple[nx.Graph, np.ndarray, torch.Tensor, torch.Tensor, torch.Tensor, list[str]]:
+    """Load Planetoid dataset, apply 60/20/20 seeded split, return undirected graph."""
+    dataset = Planetoid(root=root, name=name.capitalize())
+    data = dataset[0]
+    n: int = data.num_nodes
+
+    train_mask, val_mask, test_mask = make_split_masks(n, seed)
 
     edge_index = data.edge_index.numpy()
     G = nx.Graph()

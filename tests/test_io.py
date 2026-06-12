@@ -61,6 +61,18 @@ def test_pt_has_raw_texts(tmp_path):
     assert saved.raw_texts[2] is None
 
 
+def test_non_contiguous_node_ids_raise(tmp_path):
+    G = nx.Graph()
+    G.add_edges_from([(10, 20)])
+    y = np.array([0, 1])
+    mask = torch.tensor([True, False])
+    with pytest.raises(ValueError, match="0..n-1"):
+        save_pseudo_tag(
+            G, y, mask, ~mask, torch.zeros(2, dtype=torch.bool), ["A", "B"],
+            [], output_dir=tmp_path, dataset="pubmed", style="poetry",
+        )
+
+
 def test_pt_edge_index_shape(tmp_path):
     args = _minimal_graph()
     pt_path, _ = save_pseudo_tag(*args, output_dir=tmp_path, dataset="pubmed", style="poetry")

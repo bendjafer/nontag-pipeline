@@ -1,6 +1,6 @@
 SEED: int = 42
 DATASET: str = "pubmed"        # "cora" | "pubmed"
-STYLE: str = "poetry"
+STYLE: str = "poetry"          # rendering only: "poetry" | "news" | "story" (topics are fixed)
 
 TARGET_LEN: int = 80           # target word count for generated text
 
@@ -11,7 +11,8 @@ PPR_ALPHA: float = 0.85
 LLM_BACKEND: str = "openai"    # "openai" | "ollama"
 LLM_MODEL: str = "gpt-4o-mini"
 LLM_BASE_URL: str = "https://api.openai.com/v1"
+LLM_TEMPERATURE: float = 0.0   # deterministic generation (with SEED as API seed)
 
 CACHE_DIR: str = ".cache/llm"
 OUTPUT_DIR: str = "outputs"
-DATA_ROOT: str = "/tmp/planetoid"
+DATA_ROOT: str = "data/planetoid"   # in-repo (gitignored) so it survives reboots

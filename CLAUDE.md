@@ -11,8 +11,10 @@ usually share a class).
 - **non-TAG**: graph with edges + labels but no node text.
 - **pseudo-TAG**: the non-TAG after we attach generated text to each node.
 - **Homophily**: connected nodes tend to share the same class → neighbor labels are informative.
-- **Narrative remapping**: original class names are mapped to themes in a chosen style (e.g.
-  poetry), so generated text evokes themes, not literal class names.
+- **Narrative remapping**: original class names are mapped to fixed *topics* (war / love /
+  nature …), so generated text evokes the topic, not the literal class name. The topic
+  assignment is fixed per dataset; the *style* (poetry / news / story) only changes how the
+  topic is rendered — so style comparisons are controlled by construction.
 
 ## THE LEAKAGE RULE (non-negotiable)
 - A node's generated text may use: graph structure + labels of neighbors in train_mask | val_mask.
@@ -53,21 +55,24 @@ nontag_pipeline/
   config.py            all tuneable constants — change DATASET/STYLE here, nothing else changes
   data.py              load_dataset() → (G, y, train_mask, val_mask, test_mask, class_names)
   select.py            ppr_selection() + neighbor_label_proportions()
-  narratives.py        STYLE_TEMPLATES + LABEL_MAPS + map_proportions_to_themes()
+  narratives.py        STYLE_TEMPLATES (rendering) + TOPIC_MAPS (fixed topics) + map_proportions_to_themes()
   llm.py               complete() — OpenAI/Ollama via requests + SHA-256 disk cache
   textualize.py        build_generation_prompt() + generate_node_text()
   io.py                save_pseudo_tag() — writes .pt (PyG Data) + .json
 
-run_textualize_demo.py   smoke test: 5 test nodes, prints prompt+output, asserts no leakage
+run_textualize_demo.py   smoke test: 5 test nodes, prints prompt+output (saves nothing)
+run_textualize_full.py   Step 4 driver: textualize ALL nodes, save pseudo-TAG to outputs/
 
 tests/
+  test_data.py         (5 tests)
   test_select.py       (9 tests)
   test_narratives.py   (6 tests)
-  test_llm.py          (3 tests)
-  test_textualize.py   (7 tests)
-  test_io.py           (6 tests)
+  test_llm.py          (6 tests)
+  test_textualize.py   (9 tests)
+  test_io.py           (7 tests)
 
-outputs/               created at runtime — pseudo_tag_pubmed_poetry.pt / .json
+outputs/               created by run_textualize_full.py — pseudo_tag_pubmed_poetry.pt / .json
+data/                  created at runtime — Planetoid download cache (gitignored)
 .cache/llm/            created at runtime — SHA-256 keyed JSON LLM response cache
 docs/superpowers/      implementation plan + design spec
 ```
@@ -81,9 +86,12 @@ docs/superpowers/      implementation plan + design spec
 # Run tests (no API key needed)
 .venv/bin/python -m pytest tests/ -v
 
-# Run smoke test (requires OpenAI API key)
+# Run smoke test (requires OpenAI API key; prints 5 nodes, saves nothing)
 export LLM_API_KEY="sk-..."        # OpenAI key, university key, or whatever your server uses
 .venv/bin/python run_textualize_demo.py
+
+# Full run: textualize ALL nodes and save the pseudo-TAG to outputs/
+.venv/bin/python run_textualize_full.py
 
 # To switch to Cora: edit nontag_pipeline/config.py → DATASET = "cora"
 # To switch LLM to Ollama: edit config.py → LLM_BACKEND = "ollama", LLM_BASE_URL = "http://localhost:11434"
@@ -94,7 +102,12 @@ export LLM_API_KEY="sk-..."        # OpenAI key, university key, or whatever you
 - Default: OpenAI (`gpt-4o-mini`), reads `LLM_API_KEY` from environment — never hardcoded.
 - Ollama supported: change `LLM_BACKEND = "ollama"` and `LLM_BASE_URL = "http://localhost:11434"`.
 - University server: change `LLM_BASE_URL` to the server endpoint — zero code changes.
+- Deterministic: `temperature = 0` (config.LLM_TEMPERATURE) + `seed = config.SEED` sent with
+  every request (OpenAI seed is best-effort).
+- Transient failures (429, 5xx, connection errors) retried 5x with exponential backoff.
 - All responses cached on disk at `.cache/llm/<sha256>.json` — re-running never re-calls the API.
+  Cache key includes backend, model, base URL, temperature, and seed, so switching any of
+  these never reuses stale responses. Empty responses are rejected, never cached.
 
 ### Saved Output Format
 `save_pseudo_tag()` writes two files to `outputs/`:
@@ -102,10 +115,12 @@ export LLM_API_KEY="sk-..."        # OpenAI key, university key, or whatever you
   - `data.edge_index`, `data.y`, `data.train_mask`, `data.val_mask`, `data.test_mask`
   - `data.raw_texts` — list of str|None, one per node (None = no_signal nodes)
   - `data.class_names` — list of class name strings
-- **`pseudo_tag_<dataset>_<style>.json`** — human-readable:
-  - `nodes`: list of `{node_id, text, label, label_name, split}`
+- **`pseudo_tag_<dataset>_<style>.json`** — human-readable, for inspection/scoring ONLY
+  (contains true labels for ALL nodes incl. test — never feed it to a predictor):
+  - `nodes`: list of `{node_id, text, label, label_name, split, n_selected, n_visible}`
+    (`n_visible` of `n_selected` PPR neighbors had train/val labels — evidence strength)
   - `edges`: list of `[u, v]` pairs
-  - `dataset`, `style`, `class_names`
+  - `dataset`, `style`, `class_names`, `warning`
 
 The `.pt` format is compatible with GraphGPT, LLaGA, and GraphPrompter (all use `raw_texts`).
 When those repos are cloned, add a thin `export_to_<model>.py` adapter if needed.
@@ -119,34 +134,45 @@ When those repos are cloned, add a thin `export_to_<model>.py` adapter if needed
 - No hardcoded secrets. Deterministic where possible (seed everything).
 - Tests live in `tests/` — run with `pytest`.
 
-## Narrative Mappings (Poetry Style)
+## Topic Mappings (fixed per dataset, shared by every style)
+
+The class → topic assignment is in `TOPIC_MAPS` (`narratives.py`). It does NOT depend on style:
+every style renders the *same* topics, so accuracy differences across styles are attributable to
+style alone. Topics must be mutually distinct (separability drives accuracy) and are never named
+in the output (the prompt forces evoke-don't-name, avoiding trivial keyword matching).
 
 ### PubMed (3 classes)
-| Class | Poetry Theme |
+| Class | Topic |
 |---|---|
-| Diabetes_Mellitus_Experimental | fire and trial |
-| Diabetes_Mellitus_Type_1 | the unbroken storm |
-| Diabetes_Mellitus_Type_2 | slow tide |
+| Diabetes_Mellitus_Experimental | war |
+| Diabetes_Mellitus_Type_1 | love |
+| Diabetes_Mellitus_Type_2 | nature |
 
 ### Cora (7 classes)
-| Class | Poetry Theme |
+| Class | Topic |
 |---|---|
-| Case_Based | keeper of stories |
-| Genetic_Algorithms | seeds and seasons |
-| Neural_Networks | the weaving mind |
-| Probabilistic_Methods | fog and chance |
-| Reinforcement_Learning | the returning traveler |
-| Rule_Learning | law and stone |
-| Theory | the open horizon |
+| Case_Based | war |
+| Genetic_Algorithms | love |
+| Neural_Networks | nature |
+| Probabilistic_Methods | the city |
+| Reinforcement_Learning | music |
+| Rule_Learning | memory |
+| Theory | the cosmos |
 
-To add a new style: add an entry to `STYLE_TEMPLATES` and a new key to `LABEL_MAPS` in
-`nontag_pipeline/narratives.py`, then change `config.STYLE`.
+### Styles (rendering only)
+`STYLE_TEMPLATES` in `narratives.py`: `poetry` → "a short lyric poem", `news` → "a short news
+report", `story` → "a brief short story".
+
+- **To compare styles** (the research question): set `config.STYLE` to `poetry` / `news` /
+  `story` and run `run_textualize_full.py` for each. Topics stay fixed; only the rendering
+  changes. Each run writes `outputs/pseudo_tag_<dataset>_<style>.{pt,json}`.
+- **To add a style**: add one entry to `STYLE_TEMPLATES`, then set `config.STYLE`.
+- **To study topic distinctness** (a different axis): edit the topic values in `TOPIC_MAPS`.
 
 ## Known Notes for Next Steps
 - **Cora GraphGPT variant**: GraphGPT uses a 70-class Cora. The current `CORA_CLASSES` is the
   standard 7-class Planetoid Cora. Swap the data source in `data.py` when moving to GraphGPT Cora.
-- **Full graph textualization**: `run_textualize_demo.py` only runs 5 nodes. To textualize all
-  nodes: iterate `G.nodes()`, call `generate_node_text()` for each, collect records, call
-  `save_pseudo_tag()`. Add this as Step 4 script.
+- **Full graph textualization**: done — `run_textualize_full.py` iterates all nodes and saves
+  the pseudo-TAG to `outputs/`. The demo (`run_textualize_demo.py`) only prints 5 nodes.
 - **Ollama base URL**: When `LLM_BACKEND = "ollama"`, also set `LLM_BASE_URL = "http://localhost:11434"`.
   The default URL is the OpenAI endpoint and will not work for Ollama.

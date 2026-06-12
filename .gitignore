@@ -4,6 +4,7 @@ __pycache__/
 *.pyo
 .cache/
 outputs/
+data/
 /tmp/
 *.pt
 *.json

@@ -23,13 +23,18 @@ def save_pseudo_tag(
     style: str,
 ) -> tuple[Path, Path]:
     """Write pseudo-TAG to <output_dir>/pseudo_tag_<dataset>_<style>.{pt,json}."""
+    n = G.number_of_nodes()
+    if set(G.nodes()) != set(range(n)):
+        raise ValueError("save_pseudo_tag requires node ids 0..n-1 (raw_texts is index-aligned)")
     out = Path(output_dir)
     out.mkdir(parents=True, exist_ok=True)
     stem = f"pseudo_tag_{dataset}_{style}"
 
     raw_texts: list[str | None] = [None] * G.number_of_nodes()
+    rec_by_node: dict[int, dict] = {}
     for rec in records:
         raw_texts[rec["node"]] = rec.get("text")
+        rec_by_node[rec["node"]] = rec
 
     edges = list(G.edges())
     if edges:
@@ -63,6 +68,11 @@ def save_pseudo_tag(
         "dataset": dataset,
         "style": style,
         "class_names": class_names,
+        "warning": (
+            "Contains true labels for ALL nodes, including test. For human "
+            "inspection and scoring only — never feed this JSON to a predictor; "
+            "use the .pt file."
+        ),
         "nodes": [
             {
                 "node_id": int(n),
@@ -70,6 +80,8 @@ def save_pseudo_tag(
                 "label": int(y[n]),
                 "label_name": class_names[int(y[n])],
                 "split": _split(n),
+                "n_selected": rec_by_node.get(n, {}).get("n_selected"),
+                "n_visible": rec_by_node.get(n, {}).get("n_visible"),
             }
             for n in G.nodes()
         ],
