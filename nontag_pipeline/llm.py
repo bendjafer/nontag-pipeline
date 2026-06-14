@@ -84,9 +84,9 @@ def _post_with_retry(url: str, *, headers: dict | None = None, json_body: dict,
 
 
 def _call_openai(system: str, prompt: str) -> str:
-    api_key = os.environ.get("LLM_API_KEY")
+    api_key = os.environ.get(config.LLM_KEY_ENV)
     if not api_key:
-        raise EnvironmentError("LLM_API_KEY is not set")
+        raise EnvironmentError(f"{config.LLM_KEY_ENV} is not set")
     resp = _post_with_retry(
         f"{config.LLM_BASE_URL}/chat/completions",
         headers={"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"},

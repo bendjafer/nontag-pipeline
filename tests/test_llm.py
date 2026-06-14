@@ -53,7 +53,7 @@ def test_cache_miss_calls_api_and_saves(tmp_path, monkeypatch):
     }
     mock_response.raise_for_status = MagicMock()
 
-    monkeypatch.setenv("LLM_API_KEY", "test-key")
+    monkeypatch.setenv(config.LLM_KEY_ENV, "test-key")
 
     with patch("requests.post", return_value=mock_response):
         result = llm.complete("prompt text", system="sys prompt")
@@ -80,7 +80,7 @@ def test_cache_key_depends_on_model(tmp_path, monkeypatch):
     mock_response.json.return_value = {
         "choices": [{"message": {"content": "new model output"}}]
     }
-    monkeypatch.setenv("LLM_API_KEY", "test-key")
+    monkeypatch.setenv(config.LLM_KEY_ENV, "test-key")
 
     with patch("requests.post", return_value=mock_response):
         result = llm.complete("hello", system="sys")
@@ -93,7 +93,7 @@ def test_retry_on_429_then_success(tmp_path, monkeypatch):
     import nontag_pipeline.llm as llm
     importlib.reload(llm)
     monkeypatch.setattr(llm, "_BACKOFF_BASE_S", 0.0)
-    monkeypatch.setenv("LLM_API_KEY", "test-key")
+    monkeypatch.setenv(config.LLM_KEY_ENV, "test-key")
 
     rate_limited = MagicMock()
     rate_limited.status_code = 429
@@ -113,7 +113,7 @@ def test_empty_response_raises_and_is_not_cached(tmp_path, monkeypatch):
     monkeypatch.setattr(config, "CACHE_DIR", str(tmp_path))
     import nontag_pipeline.llm as llm
     importlib.reload(llm)
-    monkeypatch.setenv("LLM_API_KEY", "test-key")
+    monkeypatch.setenv(config.LLM_KEY_ENV, "test-key")
 
     mock_response = MagicMock()
     mock_response.status_code = 200
@@ -128,9 +128,9 @@ def test_empty_response_raises_and_is_not_cached(tmp_path, monkeypatch):
 
 def test_missing_api_key_raises(tmp_path, monkeypatch):
     monkeypatch.setattr(config, "CACHE_DIR", str(tmp_path))
-    monkeypatch.delenv("LLM_API_KEY", raising=False)
+    monkeypatch.delenv(config.LLM_KEY_ENV, raising=False)
     import nontag_pipeline.llm as llm
     importlib.reload(llm)
 
-    with pytest.raises(EnvironmentError, match="LLM_API_KEY"):
+    with pytest.raises(EnvironmentError, match=config.LLM_KEY_ENV):
         llm.complete("hello", system="sys")

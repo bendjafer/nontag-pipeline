@@ -144,19 +144,19 @@ in the output (the prompt forces evoke-don't-name, avoiding trivial keyword matc
 ### PubMed (3 classes)
 | Class | Topic |
 |---|---|
-| Diabetes_Mellitus_Experimental | war |
-| Diabetes_Mellitus_Type_1 | love |
-| Diabetes_Mellitus_Type_2 | nature |
+| Diabetes_Mellitus_Experimental | the laboratory |
+| Diabetes_Mellitus_Type_1 | the siege |
+| Diabetes_Mellitus_Type_2 | the harvest |
 
 ### Cora (7 classes)
 | Class | Topic |
 |---|---|
-| Case_Based | war |
-| Genetic_Algorithms | love |
-| Neural_Networks | nature |
-| Probabilistic_Methods | the city |
-| Reinforcement_Learning | music |
-| Rule_Learning | memory |
+| Case_Based | the archive |
+| Genetic_Algorithms | evolution |
+| Neural_Networks | the mind |
+| Probabilistic_Methods | the fog |
+| Reinforcement_Learning | the arena |
+| Rule_Learning | the ledger |
 | Theory | the cosmos |
 
 ### Styles (rendering only)
@@ -164,7 +164,7 @@ in the output (the prompt forces evoke-don't-name, avoiding trivial keyword matc
 report", `story` → "a brief short story".
 
 - **To compare styles** (the research question): set `config.STYLE` to `poetry` / `news` /
-  `story` and run `run_textualize_full.py` for each. Topics stay fixed; only the rendering
+  `story` and run `run_textualize.py` for each. Topics stay fixed; only the rendering
   changes. Each run writes `outputs/pseudo_tag_<dataset>_<style>.{pt,json}`.
 - **To add a style**: add one entry to `STYLE_TEMPLATES`, then set `config.STYLE`.
 - **To study topic distinctness** (a different axis): edit the topic values in `TOPIC_MAPS`.
@@ -172,7 +172,5 @@ report", `story` → "a brief short story".
 ## Known Notes for Next Steps
 - **Cora GraphGPT variant**: GraphGPT uses a 70-class Cora. The current `CORA_CLASSES` is the
   standard 7-class Planetoid Cora. Swap the data source in `data.py` when moving to GraphGPT Cora.
-- **Full graph textualization**: done — `run_textualize_full.py` iterates all nodes and saves
-  the pseudo-TAG to `outputs/`. The demo (`run_textualize_demo.py`) only prints 5 nodes.
 - **Ollama base URL**: When `LLM_BACKEND = "ollama"`, also set `LLM_BASE_URL = "http://localhost:11434"`.
   The default URL is the OpenAI endpoint and will not work for Ollama.

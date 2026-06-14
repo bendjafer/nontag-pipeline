@@ -1,11 +1,18 @@
-.venv/
+# Python
 __pycache__/
 *.pyc
 *.pyo
+*.pyd
+.venv/
+
+# Test cache
+.pytest_cache/
+
+# Runtime data (generated at runtime, can be large)
+data/
 .cache/
 outputs/
-data/
-/tmp/
-*.pt
-*.json
-!tests/**/*.json
+
+# Secrets — never commit these
+*.env
+.env*

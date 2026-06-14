@@ -25,7 +25,7 @@ def test_topic_map_is_independent_of_style():
     # The whole point: topics do not depend on style, so map_proportions_to_themes
     # takes no style argument and is identical regardless of which style runs.
     props = {"Diabetes_Mellitus_Type_1": 1.0}
-    assert map_proportions_to_themes(props, "pubmed") == [("love", 1.0)]
+    assert map_proportions_to_themes(props, "pubmed") == [("the siege", 1.0)]
 
 
 def test_map_proportions_sorted_descending():
@@ -37,8 +37,8 @@ def test_map_proportions_sorted_descending():
 def test_map_proportions_dominant_theme_first():
     props = {"Diabetes_Mellitus_Type_1": 0.7, "Diabetes_Mellitus_Experimental": 0.3}
     result = map_proportions_to_themes(props, "pubmed")
-    assert result[0][0] == "love"
-    assert result[1][0] == "war"
+    assert result[0][0] == "the siege"
+    assert result[1][0] == "the laboratory"
 
 
 def test_map_proportions_returns_correct_length():
@@ -54,7 +54,7 @@ def test_map_proportions_returns_correct_length():
 def test_map_proportions_single_class():
     props = {"Diabetes_Mellitus_Type_2": 1.0}
     result = map_proportions_to_themes(props, "pubmed")
-    assert result == [("nature", 1.0)]
+    assert result == [("the harvest", 1.0)]
 
 
 def test_unknown_dataset_raises():
