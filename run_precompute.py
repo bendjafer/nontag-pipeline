@@ -1,14 +1,16 @@
-"""Step 1 — pre-compute PPR selections, proportions, and themes for every node.
+"""Step 1 — pre-compute PPR selections and class proportions for every node.
 
-No LLM calls. Run this before run_textualize.py.
+No LLM calls and no narrative dependency. Run this before run_textualize.py.
+Proportions are stored as raw class-name ratios; topic mapping is applied in
+Phase 2, so you can change narrative topics without rerunning this step.
 
 Usage:
   python run_precompute.py                   # all nodes
   python run_precompute.py --n-train 1000    # 1000 train + proportional val/test
 
 Output:
-  outputs/precomputed_<dataset>_<style>.json          (all nodes)
-  outputs/precomputed_<dataset>_<style>_<N>.json      (subset)
+  outputs/precomputed_<dataset>.json          (all nodes)
+  outputs/precomputed_<dataset>_<N>.json      (subset)
 """
 from __future__ import annotations
 import argparse
@@ -20,13 +22,12 @@ from pathlib import Path
 from nontag_pipeline import config
 from nontag_pipeline.data import load_dataset
 from nontag_pipeline.select import ppr_selection, neighbor_label_proportions
-from nontag_pipeline.narratives import map_proportions_to_themes, STYLE_TEMPLATES
 
 
 def _checkpoint(out_path: Path, args: argparse.Namespace, class_names: list, records: list) -> None:
     tmp = out_path.with_suffix(".json.tmp")
     tmp.write_text(json.dumps({
-        "dataset": args.dataset, "style": args.style,
+        "dataset": args.dataset,
         "n_train": args.n_train, "class_names": class_names,
         "ppr_k": config.PPR_K, "ppr_m": config.PPR_M, "ppr_alpha": config.PPR_ALPHA,
         "nodes": records,
@@ -38,7 +39,6 @@ def parse_args() -> argparse.Namespace:
     p = argparse.ArgumentParser()
     p.add_argument("--n-train", type=int, default=0,
                    help="Training nodes to include (0 = all)")
-    p.add_argument("--style",   default=config.STYLE,   choices=list(STYLE_TEMPLATES.keys()))
     p.add_argument("--dataset", default=config.DATASET, choices=["pubmed", "cora"])
     return p.parse_args()
 
@@ -85,7 +85,7 @@ def main() -> None:
     out_dir  = Path(config.OUTPUT_DIR)
     out_dir.mkdir(parents=True, exist_ok=True)
     tag      = f"_{args.n_train}" if args.n_train > 0 else ""
-    out_path = out_dir / f"precomputed_{args.dataset}_{args.style}{tag}.json"
+    out_path = out_dir / f"precomputed_{args.dataset}{tag}.json"
 
     # Resume: load already-computed nodes so we skip them
     already_done: dict[int, dict] = {}
@@ -118,34 +118,23 @@ def main() -> None:
 
         selected    = ppr_selection(G, v, k=config.PPR_K, m=config.PPR_M, alpha=config.PPR_ALPHA)
         proportions = neighbor_label_proportions(selected, visible_labels, class_names)
+        n_visible   = sum(1 for u in selected if u in visible_labels)
 
-        if not proportions:
-            records.append({
-                "node_id": v, "split": split_of(v),
-                "label": int(y[v]), "label_name": class_names[int(y[v])],
-                "status": "no_signal",
-                "n_selected": len(selected), "n_visible": 0,
-                "proportions": {}, "themes": [],
-            })
-        else:
-            themes    = map_proportions_to_themes(proportions, args.dataset)
-            n_visible = sum(1 for u in selected if u in visible_labels)
-            records.append({
-                "node_id": v, "split": split_of(v),
-                "label": int(y[v]), "label_name": class_names[int(y[v])],
-                "status": "ok",
-                "n_selected": len(selected), "n_visible": n_visible,
-                "proportions": proportions,
-                "themes": [[theme, round(pct, 4)] for theme, pct in themes],
-            })
+        records.append({
+            "node_id": v, "split": split_of(v),
+            "label": int(y[v]), "label_name": class_names[int(y[v])],
+            "status": "no_signal" if not proportions else "ok",
+            "n_selected": len(selected), "n_visible": n_visible,
+            "proportions": proportions,   # {class_name: pct} — no narrative dependency
+        })
 
         done += 1
         if done % 500 == 0 or done == total:
             print(f"  {done}/{total}", flush=True)
             _checkpoint(out_path, args, class_names, records)
 
-    # If all nodes were already done (nothing to compute), checkpoint was never
-    # triggered — write once to normalise any filtered-out nodes from the old file.
+    # If all nodes were already done, checkpoint was never triggered — write once
+    # to normalise any filtered-out nodes from the old file.
     if not remaining:
         _checkpoint(out_path, args, class_names, records)
 

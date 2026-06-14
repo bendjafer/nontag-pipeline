@@ -1,16 +1,16 @@
-"""Step 2 — call LLM using pre-computed themes and save the pseudo-TAG.
+"""Step 2 — call LLM using pre-computed proportions and save the pseudo-TAG.
 
-Reads the precomputed JSON produced by run_precompute.py, generates one text
-per node via the configured LLM, and saves the result as a PyG .pt file
-(with raw_texts) and a human-readable .json.
+Reads the precomputed JSON produced by run_precompute.py, maps class proportions
+to narrative topics (from config), generates one text per node via the LLM, and
+saves the result as a PyG .pt file (with raw_texts) and a human-readable .json.
 
-The .pt file is the input for any TAG-based predictor (GraphGPT, LLaGA,
-GraphPrompter). raw_texts[i] is the generated text for node i, or None if
-that node was not in the precomputed set or had no neighbor signal.
+Changing narrative topics in narratives.py only requires rerunning this step —
+run_precompute.py does not need to be rerun.
 
 Usage:
-  python run_textualize.py                   # reads precomputed_<dataset>_<style>.json
-  python run_textualize.py --n-train 1000    # reads precomputed_<dataset>_<style>_1000.json
+  python run_textualize.py                   # reads precomputed_<dataset>.json
+  python run_textualize.py --n-train 1000    # reads precomputed_<dataset>_1000.json
+  python run_textualize.py --style news      # generates news-style text
 
 Output:
   outputs/pseudo_tag_<dataset>_<style>.pt / .json          (all nodes)
@@ -25,7 +25,7 @@ import torch
 
 from nontag_pipeline import config
 from nontag_pipeline.data import load_dataset
-from nontag_pipeline.narratives import STYLE_TEMPLATES
+from nontag_pipeline.narratives import STYLE_TEMPLATES, map_proportions_to_themes
 from nontag_pipeline.textualize import build_generation_prompt
 from nontag_pipeline import llm
 from nontag_pipeline.io import save_pseudo_tag
@@ -46,7 +46,7 @@ def main() -> None:
 
     precomputed_path = (
         Path(config.OUTPUT_DIR)
-        / f"precomputed_{args.dataset}_{args.style}{('_' + tag) if tag else ''}.json"
+        / f"precomputed_{args.dataset}{('_' + tag) if tag else ''}.json"
     )
     if not precomputed_path.exists():
         raise FileNotFoundError(
@@ -54,11 +54,10 @@ def main() -> None:
         )
 
     precomputed = json.loads(precomputed_path.read_text())
-    if precomputed.get("dataset") != args.dataset or precomputed.get("style") != args.style:
+    if precomputed.get("dataset") != args.dataset:
         raise ValueError(
-            f"Precomputed file is for dataset={precomputed.get('dataset')!r} "
-            f"style={precomputed.get('style')!r}, but args say "
-            f"dataset={args.dataset!r} style={args.style!r}."
+            f"Precomputed file is for dataset={precomputed.get('dataset')!r}, "
+            f"but --dataset={args.dataset!r}."
         )
     node_records = precomputed["nodes"]
     print(f"Loaded {len(node_records)} precomputed nodes from {precomputed_path.name}")
@@ -100,7 +99,9 @@ def main() -> None:
                             "n_selected": node_data["n_selected"], "n_visible": 0})
             n_no_signal += 1
         else:
-            themes       = [tuple(t) for t in node_data["themes"]]
+            # Map class proportions → narrative topics here, not in precompute.
+            # This means changing TOPIC_MAPS only requires rerunning this step.
+            themes       = map_proportions_to_themes(node_data["proportions"], args.dataset)
             system, user = build_generation_prompt(themes, args.style, config.TARGET_LEN)
             text         = llm.complete(user, system=system)
             records.append({"node": v, "status": "ok", "text": text,
