@@ -78,3 +78,11 @@ def test_pt_edge_index_shape(tmp_path):
     pt_path, _ = save_pseudo_tag(*args, output_dir=tmp_path, dataset="pubmed", style="poetry")
     saved = torch.load(pt_path, weights_only=False)
     assert saved.edge_index.shape[0] == 2
+
+
+def test_raw_texts_length_matches_node_count(tmp_path):
+    args = _minimal_graph()
+    G = args[0]
+    pt_path, _ = save_pseudo_tag(*args, output_dir=tmp_path, dataset="pubmed", style="poetry")
+    saved = torch.load(pt_path, weights_only=False)
+    assert len(saved.raw_texts) == G.number_of_nodes()

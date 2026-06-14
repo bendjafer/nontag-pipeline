@@ -1,6 +1,6 @@
 """Export pseudo-TAG to GraphPrompter's expected directory layout.
 
-Run AFTER run_embed.py --embedder sbert so that data.x exists.
+Run AFTER pipeline/embed.py --embedder sbert so that data.x exists.
 
 Usage:
     python export/graphprompter.py
@@ -49,7 +49,7 @@ def main() -> None:
 
     if not in_path.exists():
         raise FileNotFoundError(
-            f"{in_path} not found — run: python run_embed.py --embedder sbert"
+            f"{in_path} not found — run: python pipeline/embed.py --embedder sbert"
         )
 
     print(f"Loading {in_path.name} ...")
@@ -71,8 +71,8 @@ def main() -> None:
     src, dst = data.edge_index
     keep = [int(s.item()) in old_to_new and int(d.item()) in old_to_new
             for s, d in zip(src, dst)]
-    new_src = torch.tensor([old_to_new[int(s)] for s, k in zip(src, keep) if k])
-    new_dst = torch.tensor([old_to_new[int(d)] for d, k in zip(dst, keep) if k])
+    new_src = torch.tensor([old_to_new[int(s)] for s, k in zip(src, keep) if k], dtype=torch.long)
+    new_dst = torch.tensor([old_to_new[int(d)] for d, k in zip(dst, keep) if k], dtype=torch.long)
     new_edge_index = torch.stack([new_src, new_dst], dim=0)
 
     sub_x     = data.x[textualized]
@@ -90,10 +90,14 @@ def main() -> None:
         "test":  remap_mask(data.test_mask),
     }
 
+    n_dropped = data.y.shape[0] - n
+    if n_dropped > 0:
+        print(f"Warning: {n_dropped} nodes have no text (no_signal) and are excluded "
+              f"from the export — evaluation set is smaller than the original split.")
     print(f"Induced subgraph: {n} nodes, {new_edge_index.shape[1]} edges "
           f"(was {data.y.shape[0]} nodes, {data.edge_index.shape[1]} edges)")
 
-    out_root = Path("dataset") / f"tape_{args.dataset}"
+    out_root = Path(config.OUTPUT_DIR) / "graphprompter" / f"tape_{args.dataset}_{args.style}_{model_name}"
     proc_dir = out_root / "processed"
     splt_dir = out_root / "split"
     proc_dir.mkdir(parents=True, exist_ok=True)

@@ -1,169 +1,120 @@
 # Non-TAG → Pseudo-TAG Textualization Pipeline
 
-A research pipeline that takes a graph with **no node text** (edges + labels only) and generates synthetic styled text per node, producing a pseudo-TAG graph compatible with LLM-based node classifiers (GraphGPT, LLaGA, GraphPrompter).
+This project studies whether the **narrative style** of synthetically generated text affects the accuracy of LLM-based graph node classifiers (GraphPrompter, GraphGPT, LLaGA).
 
-The goal is to study whether the **narrative style** of generated text (poetry / news / story) affects downstream classification accuracy, with class-to-topic mappings held fixed across conditions so that style is the only variable.
-
----
-
-## How It Works
-
-Each node's text is generated from the label distribution of its most informative neighbors, selected via Personalized PageRank. Class labels are remapped to literary themes (e.g. `Diabetes_Mellitus_Type_2 → the harvest`) at generation time, so the model learns an implicit association rather than matching class names literally.
-
-**Leakage rule (non-negotiable):** a node's text may only draw on the labels of its train/val neighbors. Test node labels are never used during generation.
-
-The pipeline runs in three phases:
-
-```
-Phase 1 — run_precompute.py    PPR selection + class proportions     (no API calls)
-Phase 2 — run_textualize.py    topic mapping + LLM text generation   (uses API key)
-Phase 3 — run_encode.py        encode raw_texts → node features x    (local model)
-```
-
-Phases are fully decoupled: changing narrative topics only requires rerunning Phase 2. Changing the encoder only requires rerunning Phase 3.
+We start from a graph that has **no node text** — only edges and labels — and generate a short text for each node. The result is a *pseudo-TAG* graph that can be fed directly into text-attributed graph (TAG) classifiers. By generating the same graph three times with different styles (poetry / news / story) and comparing downstream accuracy, we isolate the effect of narrative style on classification.
 
 ---
 
-## Project Structure
+## Method
 
-```
-nontag_pipeline/
-  config.py           all tuneable constants (dataset, style, LLM settings, paths)
-  data.py             load_dataset() — Planetoid download + 60/20/20 seeded split
-  select.py           ppr_selection() + neighbor_label_proportions()
-  narratives.py       TOPIC_MAPS (class → theme) + STYLE_TEMPLATES
-  llm.py              LLM calls (OpenAI / Ollama) with SHA-256 disk cache and retry
-  textualize.py       build_generation_prompt() + generate_node_text()
-  io.py               save_pseudo_tag() — writes PyG .pt + human-readable .json
-  encode/
-    sbert.py          SBERT encoder — all-mpnet-base-v2 (768-dim)   → GraphPrompter
-    graphgpt.py       Transformer mean-pool encoder (768-dim)        → GraphGPT
+For each node, we:
+1. Select its most informative neighbors using Personalized PageRank (PPR)
+2. Compute the proportion of each class among those neighbors
+3. Map class labels to abstract literary themes (e.g. `Diabetes_Mellitus_Type_1 → war`)
+4. Prompt an LLM to write a short text that evokes those themes in the chosen style
 
-run_precompute.py     Phase 1 driver
-run_textualize.py     Phase 2 driver
-run_encode.py         Phase 3 driver
+The generated text reflects the node's local graph context — not its own label. Test node labels are never used during generation.
 
-tests/                55 unit tests (pytest)
-outputs/              generated files (gitignored)
-data/                 Planetoid download cache (gitignored)
-.cache/llm/           LLM response cache, keyed by SHA-256 (gitignored)
-```
+**Datasets:** PubMed (3 classes), Cora (7 classes)
+**Styles:** `poetry`, `news`, `story`
 
 ---
 
-## Setup
+## Pipeline
 
+The pipeline runs in three sequential steps:
+
+```
+Step 1 — precompute    PPR selection + class proportions  (no API calls)
+Step 2 — textualize    LLM text generation                (requires API key)
+Step 3 — embed         encode text → node feature vectors (local model)
+```
+
+**Install dependencies** (Python 3.10+):
 ```bash
-python -m venv .venv
-source .venv/bin/activate
+python -m venv .venv && source .venv/bin/activate
 pip install -r requirements.txt
 ```
 
----
-
-## Running
-
+**Step 1 — Precompute** (run once per dataset):
 ```bash
-# Set your API key (OpenAI, or any compatible server)
-export LLM_API_KEY="sk-..."
-
-# Phase 1 — PPR + class proportions (no API calls, style-independent)
-python run_precompute.py --n-train 1000    # 1000 train + proportional val/test
-python run_precompute.py                   # all nodes (~19k for PubMed)
-
-# Phase 2 — map proportions to topics, generate text, save pseudo-TAG
-python run_textualize.py --n-train 1000
-python run_textualize.py --style news      # change style without rerunning Phase 1
-
-# Phase 3 — encode raw_texts into node feature vectors
-python run_encode.py --encoder sbert       # GraphPrompter
-python run_encode.py --encoder graphgpt    # GraphGPT
-
-# Run tests
-python -m pytest tests/ -v
+python pipeline/precompute.py                  # all nodes
+python pipeline/precompute.py --n-train 1000   # subset: 1000 train + proportional val/test
 ```
 
-**Changing narrative topics** (e.g. editing `TOPIC_MAPS` in `narratives.py`): only Phase 2 needs to rerun — Phase 1 precomputed proportions are topic-independent.
+**Step 2 — Textualize** (run once per style):
+```bash
+export LLM_API_KEY="sk-..."
+python pipeline/textualize.py --style story
+python pipeline/textualize.py --style news
+python pipeline/textualize.py --style poetry
+```
+Step 1 does not need to rerun between styles. Each style produces a separate output file.
 
-**Comparing styles**: run Phase 2 once per style with `--style poetry/news/story`. Topics stay fixed; only the rendering changes. Each run writes a separate output file.
+**Step 3 — Embed**:
+```bash
+python pipeline/embed.py --embedder sbert     # for GraphPrompter
+python pipeline/embed.py --embedder graphgpt  # for GraphGPT
+```
 
 ---
 
-## Output Files
+## Outputs
 
-| File | Description |
+All files are written to `outputs/`:
+
+| File | Content |
 |---|---|
-| `outputs/precomputed_<dataset>[_N].json` | PPR selections + class proportions (Phase 1) |
-| `outputs/pseudo_tag_<dataset>_<style>[_N].pt` | PyG Data with `raw_texts` (Phase 2) |
-| `outputs/pseudo_tag_<dataset>_<style>[_N].json` | Human-readable version — do not feed to predictor |
-| `outputs/pseudo_tag_<dataset>_<style>[_N]_<encoder>.pt` | PyG Data with `raw_texts` + `x` (Phase 3) |
+| `precomputed_<dataset>.json` | PPR selections + class proportions (Step 1) |
+| `pseudo_tag_<dataset>_<style>.pt` | PyG Data with `raw_texts` (Step 2) |
+| `pseudo_tag_<dataset>_<style>_<model>.pt` | PyG Data with `raw_texts` + `x` (Step 3) |
 
-The `.pt` files with `x` are the direct input to GraphGPT / GraphPrompter GNN components:
-
+The `.pt` file after Step 3 contains everything a TAG classifier needs:
 ```python
-data = torch.load("outputs/pseudo_tag_pubmed_poetry_sbert.pt", weights_only=False)
-data.x            # float tensor (N, 768) — node features from SBERT
-data.raw_texts    # list[str | None] — generated text per node
-data.y            # node labels
+data = torch.load("outputs/pseudo_tag_pubmed_story_all-mpnet-base-v2.pt", weights_only=False)
+data.x           # float32 (N, 768) — node feature vectors
+data.raw_texts   # list[str | None]  — generated text per node
+data.y           # node labels
+data.edge_index  # graph structure (PyG format)
 data.train_mask / data.val_mask / data.test_mask
-data.edge_index   # standard PyG format
 data.class_names
 ```
 
 ---
 
+## Using with GraphPrompter / GraphGPT
+
+After Step 3, run the export script to produce the exact directory layout each model expects:
+
+**GraphPrompter:**
+```bash
+python export/graphprompter.py --style story
+```
+This writes to `outputs/graphprompter/tape_<dataset>_<style>_<model>/`. Copy that folder into the cloned GraphPrompter repo under `dataset/`.
+
+**GraphGPT / LLaGA:** *(integration not yet implemented)*
+
+---
+
 ## Configuration
 
-All settings live in `nontag_pipeline/config.py`. Nothing else needs to change.
+All settings are in `nontag_pipeline/config.py`. Key options:
 
-| Variable | Default | Options |
+| Variable | Default | What it controls |
 |---|---|---|
-| `DATASET` | `"pubmed"` | `"pubmed"`, `"cora"` |
-| `STYLE` | `"poetry"` | `"poetry"`, `"news"`, `"story"` |
-| `LLM_BACKEND` | `"openai"` | `"openai"`, `"ollama"` |
-| `LLM_MODEL` | `"gpt-4o-mini"` | any model name |
-| `LLM_BASE_URL` | OpenAI endpoint | any compatible API URL |
-| `LLM_KEY_ENV` | `"LLM_API_KEY"` | name of the env var holding your key |
-| `PPR_K` | `2` | k-hop limit for PPR |
-| `PPR_M` | `10` | top-m neighbors to select |
+| `DATASET` | `"pubmed"` | `"pubmed"` or `"cora"` |
+| `STYLE` | `"story"` | `"poetry"`, `"news"`, `"story"` |
+| `LLM_MODEL` | `"gpt-4o-mini"` | any OpenAI-compatible model |
+| `LLM_BASE_URL` | OpenAI endpoint | swap to university server or Ollama |
+| `LLM_KEY_ENV` | `"LLM_API_KEY"` | name of the env var holding the API key |
 
-**Switching providers:** set `LLM_KEY_ENV = "UNIVERSITY_API_KEY"` (or whatever) and `LLM_BASE_URL` to your server — no code changes.
+To use a university server or Ollama, change `LLM_BASE_URL` (and `LLM_BACKEND = "ollama"` for Ollama) — no other code changes needed.
 
 ---
 
-## Topic Mappings
+## Tests
 
-Class labels are remapped to themes at generation time (Phase 2, not Phase 1). Topics are chosen to evoke the real-world meaning of each class so the generated texts are semantically distinct — making the predictor's classification task meaningful.
-
-**PubMed**
-
-| Class | Theme | Rationale |
-|---|---|---|
-| Diabetes_Mellitus_Experimental | the laboratory | lab-induced models, controlled interventions |
-| Diabetes_Mellitus_Type_1 | the siege | immune system besieging and destroying beta cells |
-| Diabetes_Mellitus_Type_2 | the harvest | metabolic accumulation, gradual insulin resistance |
-
-**Cora**
-
-| Class | Theme | Rationale |
-|---|---|---|
-| Case_Based | the archive | reasoning from stored past examples |
-| Genetic_Algorithms | evolution | natural selection, mutation, survival of fittest solutions |
-| Neural_Networks | the mind | brain-inspired layered computation |
-| Probabilistic_Methods | the fog | uncertainty, degrees of belief |
-| Reinforcement_Learning | the arena | agents, reward signals, trial and error |
-| Rule_Learning | the ledger | explicit symbolic rules, deterministic inference |
-| Theory | the cosmos | abstract proofs, mathematical foundations |
-
----
-
-## Roadmap
-
-- [x] Data loading + 60/20/20 seeded split
-- [x] PPR neighbor selection
-- [x] Theme-based LLM text generation (poetry / news / story)
-- [x] Pseudo-TAG save (PyG .pt + .json)
-- [x] SBERT encoding → node features (GraphPrompter)
-- [x] Transformer encoding → node features (GraphGPT)
-- [ ] GraphGPT / LLaGA / GraphPrompter integration
-- [ ] Accuracy comparison across narrative styles
+```bash
+python -m pytest tests/ -v
+```

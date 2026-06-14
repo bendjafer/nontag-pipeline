@@ -61,8 +61,7 @@ def embed(
             for j, idx in enumerate(valid_idx[start : start + batch_size]):
                 x[idx] = embeddings[j]
 
-            if start + batch_size < len(valid_texts):
-                processed = min(start + batch_size, len(valid_texts))
-                print(f"  {processed}/{len(valid_texts)}", flush=True)
+            processed = min(start + batch_size, len(valid_texts))
+            print(f"  {processed}/{len(valid_texts)}", flush=True)
 
     return x

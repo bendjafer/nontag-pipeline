@@ -18,7 +18,12 @@ def ppr_selection(
     # nx.pagerank converges when total error < N*tol; tighten tol so rankings
     # among close-scoring neighbors are not noise on larger subgraphs. Small N
     # shrinks the budget, needing >100 iterations — hence the raised max_iter.
-    ppr = nx.pagerank(H, alpha=alpha, personalization={v: 1.0}, tol=1e-8, max_iter=1000)
+    try:
+        ppr = nx.pagerank(H, alpha=alpha, personalization={v: 1.0}, tol=1e-8, max_iter=1000)
+    except nx.PowerIterationFailedConvergence:
+        # Fall back to uniform scores so the node still gets neighbors selected;
+        # quality is slightly lower but the run continues uninterrupted.
+        ppr = {u: 1.0 / len(H) for u in H.nodes()}
 
     candidates = set(H.nodes())
     candidates.discard(v)

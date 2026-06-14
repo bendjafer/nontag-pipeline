@@ -4,44 +4,51 @@ import hashlib
 import json
 import os
 import time
+import uuid
 from pathlib import Path
 
 import requests
 
 _MAX_ATTEMPTS = 5
-_BACKOFF_BASE_S = 1.0  # 1, 2, 4, 8 seconds between attempts
+_BACKOFF_BASE_S = 1.0  # delays: 1, 2, 4, 8, 16 seconds between attempts
 
 from nontag_pipeline import config
 
 
-def complete(prompt: str, system: str | None = None) -> str:
-    """Call configured LLM backend; return cached response if available."""
+def complete(prompt: str, system: str | None = None, seed: int | None = None) -> str:
+    """Call configured LLM backend; return cached response if available.
+
+    Pass seed=node_id to guarantee unique outputs for nodes that share the
+    same proportion profile. The seed is included in the cache key so each
+    (prompt, seed) pair is cached independently.
+    """
     system = system or "You are a helpful assistant."
-    key = _cache_key(system, prompt)
+    effective_seed = seed if seed is not None else config.SEED
+    key = _cache_key(system, prompt, effective_seed)
     path = _cache_path(key)
 
     if path.exists():
         return json.loads(path.read_text())["response"]
 
     if config.LLM_BACKEND == "openai":
-        response = _call_openai(system, prompt)
+        response = _call_openai(system, prompt, effective_seed)
     elif config.LLM_BACKEND == "ollama":
-        response = _call_ollama(system, prompt)
+        response = _call_ollama(system, prompt, effective_seed)
     else:
         raise ValueError(f"Unknown LLM_BACKEND: {config.LLM_BACKEND!r}")
 
     if not response:
         raise RuntimeError("LLM returned an empty response; not caching it")
 
-    # Atomic write: a process killed mid-write must not leave a truncated
-    # cache file that later parses as a hit.
-    tmp_path = path.with_suffix(".json.tmp")
+    # Atomic write: unique tmp name per process+call avoids collisions when
+    # two processes cache the same key concurrently.
+    tmp_path = path.with_name(f"{path.stem}.{uuid.uuid4().hex}.tmp")
     tmp_path.write_text(json.dumps({"system": system, "prompt": prompt, "response": response}))
     os.replace(tmp_path, path)
     return response
 
 
-def _cache_key(system: str, prompt: str) -> str:
+def _cache_key(system: str, prompt: str, seed: int) -> str:
     content = json.dumps(
         {
             "system": system,
@@ -50,7 +57,7 @@ def _cache_key(system: str, prompt: str) -> str:
             "model": config.LLM_MODEL,
             "base_url": config.LLM_BASE_URL,
             "temperature": config.LLM_TEMPERATURE,
-            "seed": config.SEED,
+            "seed": seed,
         },
         sort_keys=True,
     )
@@ -83,7 +90,7 @@ def _post_with_retry(url: str, *, headers: dict | None = None, json_body: dict,
     raise RuntimeError(f"LLM request failed after {_MAX_ATTEMPTS} attempts: {last_error}")
 
 
-def _call_openai(system: str, prompt: str) -> str:
+def _call_openai(system: str, prompt: str, seed: int) -> str:
     api_key = os.environ.get(config.LLM_KEY_ENV)
     if not api_key:
         raise EnvironmentError(f"{config.LLM_KEY_ENV} is not set")
@@ -97,14 +104,14 @@ def _call_openai(system: str, prompt: str) -> str:
                 {"role": "user", "content": prompt},
             ],
             "temperature": config.LLM_TEMPERATURE,
-            "seed": config.SEED,
+            "seed": seed,
         },
         timeout=60,
     )
     return resp.json()["choices"][0]["message"]["content"].strip()
 
 
-def _call_ollama(system: str, prompt: str) -> str:
+def _call_ollama(system: str, prompt: str, seed: int) -> str:
     resp = _post_with_retry(
         f"{config.LLM_BASE_URL}/api/chat",
         json_body={
@@ -114,7 +121,7 @@ def _call_ollama(system: str, prompt: str) -> str:
                 {"role": "user", "content": prompt},
             ],
             "stream": False,
-            "options": {"temperature": config.LLM_TEMPERATURE, "seed": config.SEED},
+            "options": {"temperature": config.LLM_TEMPERATURE, "seed": seed},
         },
         timeout=120,
     )

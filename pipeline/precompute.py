@@ -64,6 +64,9 @@ def main() -> None:
     val_nodes   = [int(n) for n in G.nodes() if val_mask[n].item()]
     test_nodes  = [int(n) for n in G.nodes() if test_mask[n].item()]
 
+    if not train_nodes:
+        raise RuntimeError("Dataset has no training nodes — check seed and split.")
+
     if args.n_train > 0:
         ratio   = args.n_train / len(train_nodes)
         n_val   = max(1, round(len(val_nodes)  * ratio))
@@ -79,9 +82,10 @@ def main() -> None:
         print(f"All nodes: {G.number_of_nodes()}")
 
     def split_of(v: int) -> str:
-        if train_mask[v].item(): return "train"
-        if val_mask[v].item():   return "val"
-        return "test"
+        if train_mask[v].item():    return "train"
+        if val_mask[v].item():      return "val"
+        if test_mask[v].item():     return "test"
+        raise RuntimeError(f"Node {v} not in any split mask — data split is inconsistent.")
 
     out_dir  = Path(config.OUTPUT_DIR)
     out_dir.mkdir(parents=True, exist_ok=True)
@@ -96,6 +100,13 @@ def main() -> None:
             raise ValueError(
                 f"PPR params in {out_path.name} {stored} differ from config {current}. "
                 "Delete the file or restore the original params before resuming."
+            )
+        existing_ids = {r["node_id"] for r in existing.get("nodes", [])}
+        if args.n_train > 0 and existing_ids > selected_nodes:
+            raise RuntimeError(
+                f"{out_path.name} contains a larger run ({len(existing_ids)} nodes). "
+                "Running a subset would overwrite it. Delete the file first if you intend "
+                "to replace it, or run without --n-train to resume the full run."
             )
         already_done = {
             r["node_id"]: r

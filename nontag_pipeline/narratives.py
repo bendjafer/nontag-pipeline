@@ -59,4 +59,5 @@ def map_proportions_to_themes(
             "Add them to TOPIC_MAPS in narratives.py"
         )
     themed = [(topic_map[cls], pct) for cls, pct in proportions.items()]
-    return sorted(themed, key=lambda x: x[1], reverse=True)
+    # Secondary sort by topic name ensures stable ordering on tied proportions.
+    return sorted(themed, key=lambda x: (-x[1], x[0]))
