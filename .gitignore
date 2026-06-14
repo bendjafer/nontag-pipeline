@@ -13,6 +13,10 @@ data/
 .cache/
 outputs/
 
+# AI assistant config files
+CLAUDE.md
+.claude/
+
 # Secrets — never commit these
 *.env
 .env*

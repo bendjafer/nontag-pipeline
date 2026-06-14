@@ -154,5 +154,4 @@ Class labels are mapped to themes before generation and never named in the outpu
 - [x] Pseudo-TAG save (PyG .pt + .json)
 - [ ] GraphGPT / LLaGA / GraphPrompter integration
 - [ ] SBERT encoding of generated texts → node features
-- [ ] Label propagation + GCN baselines
 - [ ] Accuracy comparison across narrative styles
