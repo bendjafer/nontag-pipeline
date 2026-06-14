@@ -6,9 +6,9 @@ Two INDEPENDENT axes, kept separate so style comparisons are controlled by const
 
 A node's topics come from TOPIC_MAPS[dataset] regardless of style, so any accuracy difference
 across styles is attributable to STYLE alone — not to a different topic assignment. Topics are
-chosen to evoke the real-world meaning of each class (e.g. autoimmune attack → "the siege"),
-so adjacent classes produce semantically distinct text and the predictor has a genuine signal
-to learn. Output must EVOKE the topic, never name it (see build_generation_prompt).
+broad literary themes — not tied to the literal class meaning — so the predictor must learn
+from style and structure, not from semantic leakage. Output must EVOKE the topic, never name
+it (see build_generation_prompt).
 """
 from __future__ import annotations
 
@@ -22,12 +22,9 @@ STYLE_TEMPLATES: dict[str, str] = {
 # dataset -> {class_name: topic}. Topics must be mutually distinct; same map used for every style.
 TOPIC_MAPS: dict[str, dict[str, str]] = {
     "pubmed": {
-        # Experimental: lab-induced diabetes, animal models, controlled interventions
-        "Diabetes_Mellitus_Experimental": "the laboratory",
-        # Type 1: autoimmune — immune system besieges and destroys insulin-producing cells
-        "Diabetes_Mellitus_Type_1": "the siege",
-        # Type 2: metabolic overload, gradual insulin resistance, lifestyle accumulation
-        "Diabetes_Mellitus_Type_2": "the harvest",
+        "Diabetes_Mellitus_Experimental": "nature",
+        "Diabetes_Mellitus_Type_1": "war",
+        "Diabetes_Mellitus_Type_2": "love",
     },
     "cora": {
         # Case_Based: reasoning by retrieving and adapting stored past examples

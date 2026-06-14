@@ -1,23 +1,25 @@
-"""Step 1 — pre-compute PPR selections and class proportions for every node.
+"""Phase 1 — pre-compute PPR selections and class proportions for every node.
 
-No LLM calls and no narrative dependency. Run this before run_textualize.py.
+No LLM calls and no narrative dependency. Run this before pipeline/textualize.py.
 Proportions are stored as raw class-name ratios; topic mapping is applied in
 Phase 2, so you can change narrative topics without rerunning this step.
 
 Usage:
-  python run_precompute.py                   # all nodes
-  python run_precompute.py --n-train 1000    # 1000 train + proportional val/test
+  python pipeline/precompute.py                   # all nodes
+  python pipeline/precompute.py --n-train 1000    # 1000 train + proportional val/test
 
 Output:
-  outputs/precomputed_<dataset>.json          (all nodes)
-  outputs/precomputed_<dataset>_<N>.json      (subset)
+  outputs/precomputed_<dataset>.json
 """
 from __future__ import annotations
 import argparse
 import json
 import os
 import random
+import sys
 from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from nontag_pipeline import config
 from nontag_pipeline.data import load_dataset
@@ -50,7 +52,6 @@ def main() -> None:
         args.dataset, seed=config.SEED, root=config.DATA_ROOT
     )
 
-    # Only train+val labels are visible during generation (leakage rule)
     visible_labels = {
         int(n): int(y[n])
         for n in G.nodes()
@@ -64,10 +65,10 @@ def main() -> None:
     test_nodes  = [int(n) for n in G.nodes() if test_mask[n].item()]
 
     if args.n_train > 0:
-        ratio  = args.n_train / len(train_nodes)
-        n_val  = max(1, round(len(val_nodes)  * ratio))
-        n_test = max(1, round(len(test_nodes) * ratio))
-        rng    = random.Random(config.SEED)
+        ratio   = args.n_train / len(train_nodes)
+        n_val   = max(1, round(len(val_nodes)  * ratio))
+        n_test  = max(1, round(len(test_nodes) * ratio))
+        rng     = random.Random(config.SEED)
         s_train = rng.sample(train_nodes, min(args.n_train, len(train_nodes)))
         s_val   = rng.sample(val_nodes,   min(n_val,        len(val_nodes)))
         s_test  = rng.sample(test_nodes,  min(n_test,       len(test_nodes)))
@@ -84,21 +85,18 @@ def main() -> None:
 
     out_dir  = Path(config.OUTPUT_DIR)
     out_dir.mkdir(parents=True, exist_ok=True)
-    tag      = f"_{args.n_train}" if args.n_train > 0 else ""
-    out_path = out_dir / f"precomputed_{args.dataset}{tag}.json"
+    out_path = out_dir / f"precomputed_{args.dataset}.json"
 
-    # Resume: load already-computed nodes so we skip them
     already_done: dict[int, dict] = {}
     if out_path.exists():
         existing = json.loads(out_path.read_text())
-        stored = (existing.get("ppr_k"), existing.get("ppr_m"), existing.get("ppr_alpha"))
+        stored  = (existing.get("ppr_k"), existing.get("ppr_m"), existing.get("ppr_alpha"))
         current = (config.PPR_K, config.PPR_M, config.PPR_ALPHA)
         if stored != current:
             raise ValueError(
                 f"PPR params in {out_path.name} {stored} differ from config {current}. "
                 "Delete the file or restore the original params before resuming."
             )
-        # Only keep nodes that are still in the current selected set
         already_done = {
             r["node_id"]: r
             for r in existing.get("nodes", [])
@@ -125,7 +123,7 @@ def main() -> None:
             "label": int(y[v]), "label_name": class_names[int(y[v])],
             "status": "no_signal" if not proportions else "ok",
             "n_selected": len(selected), "n_visible": n_visible,
-            "proportions": proportions,   # {class_name: pct} — no narrative dependency
+            "proportions": proportions,
         })
 
         done += 1
@@ -133,8 +131,6 @@ def main() -> None:
             print(f"  {done}/{total}", flush=True)
             _checkpoint(out_path, args, class_names, records)
 
-    # If all nodes were already done, checkpoint was never triggered — write once
-    # to normalise any filtered-out nodes from the old file.
     if not remaining:
         _checkpoint(out_path, args, class_names, records)
 

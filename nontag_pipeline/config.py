@@ -11,7 +11,7 @@ PPR_ALPHA: float = 0.85
 LLM_BACKEND: str = "openai"    # "openai" | "ollama"
 LLM_MODEL: str = "gpt-4o-mini"
 LLM_BASE_URL: str = "https://api.openai.com/v1"
-LLM_TEMPERATURE: float = 0.0   # deterministic generation (with SEED as API seed)
+LLM_TEMPERATURE: float = 0.7   # variation per node; prompt constraints keep themes intact
 
 # Name of the environment variable that holds the API key.
 # Export both keys and flip this line to switch — no code changes needed.

@@ -12,6 +12,7 @@ __pycache__/
 data/
 .cache/
 outputs/
+dataset/
 
 # AI assistant config files
 CLAUDE.md
